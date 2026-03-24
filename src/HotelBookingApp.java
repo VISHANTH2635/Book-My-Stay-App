@@ -1,11 +1,5 @@
 import java.util.*;
 
-class InvalidCancellationException extends Exception {
-    public InvalidCancellationException(String message) {
-        super(message);
-    }
-}
-
 class RoomInventory {
     private HashMap<String, Integer> inventory;
 
@@ -13,32 +7,30 @@ class RoomInventory {
         inventory = new HashMap<>();
     }
 
-    public void addRoom(String roomType, int count) {
+    public synchronized void addRoom(String roomType, int count) {
         inventory.put(roomType, count);
     }
 
-    public int getAvailability(String roomType) {
+    public synchronized boolean bookRoom(String roomType) {
+        if (!inventory.containsKey(roomType)) return false;
+        int count = inventory.get(roomType);
+        if (count <= 0) return false;
+        inventory.put(roomType, count - 1);
+        return true;
+    }
+
+    public synchronized int getAvailability(String roomType) {
         return inventory.getOrDefault(roomType, 0);
-    }
-
-    public void reduceRoom(String roomType) {
-        inventory.put(roomType, inventory.get(roomType) - 1);
-    }
-
-    public void increaseRoom(String roomType) {
-        inventory.put(roomType, inventory.get(roomType) + 1);
     }
 }
 
 class Reservation {
     private String guestName;
     private String roomType;
-    private String reservationId;
 
-    public Reservation(String guestName, String roomType, String reservationId) {
+    public Reservation(String guestName, String roomType) {
         this.guestName = guestName;
         this.roomType = roomType;
-        this.reservationId = reservationId;
     }
 
     public String getGuestName() {
@@ -48,116 +40,59 @@ class Reservation {
     public String getRoomType() {
         return roomType;
     }
+}
 
-    public String getReservationId() {
-        return reservationId;
+class BookingQueue {
+    private Queue<Reservation> queue;
+
+    public BookingQueue() {
+        queue = new LinkedList<>();
+    }
+
+    public synchronized void addRequest(Reservation r) {
+        queue.add(r);
+    }
+
+    public synchronized Reservation getRequest() {
+        return queue.poll();
     }
 }
 
-class BookingHistory {
-    private List<Reservation> history;
-
-    public BookingHistory() {
-        history = new ArrayList<>();
-    }
-
-    public void addReservation(Reservation r) {
-        history.add(r);
-    }
-
-    public boolean removeReservation(String reservationId) {
-        Iterator<Reservation> it = history.iterator();
-        while (it.hasNext()) {
-            Reservation r = it.next();
-            if (r.getReservationId().equals(reservationId)) {
-                it.remove();
-                return true;
-            }
-        }
-        return false;
-    }
-
-    public Reservation findReservation(String reservationId) {
-        for (Reservation r : history) {
-            if (r.getReservationId().equals(reservationId)) {
-                return r;
-            }
-        }
-        return null;
-    }
-
-    public List<Reservation> getAll() {
-        return history;
-    }
-}
-
-class BookingService {
+class BookingProcessor extends Thread {
+    private BookingQueue queue;
     private RoomInventory inventory;
-    private Set<String> allocated;
-    private int idCounter = 1;
-    private BookingHistory history;
+    private static int idCounter = 1;
 
-    public BookingService(RoomInventory inventory, BookingHistory history) {
+    public BookingProcessor(BookingQueue queue, RoomInventory inventory) {
+        this.queue = queue;
         this.inventory = inventory;
-        this.history = history;
-        allocated = new HashSet<>();
     }
 
-    public void book(String guest, String type) {
-        if (inventory.getAvailability(type) > 0) {
-            String id = type.replace(" ", "") + "-" + idCounter++;
-            allocated.add(id);
-            inventory.reduceRoom(type);
-            Reservation r = new Reservation(guest, type, id);
-            history.addReservation(r);
-            System.out.println("Booked: " + id);
-        } else {
-            System.out.println("Booking failed for " + guest);
-        }
-    }
-}
-
-class CancellationService {
-    private RoomInventory inventory;
-    private BookingHistory history;
-    private Stack<String> rollbackStack;
-
-    public CancellationService(RoomInventory inventory, BookingHistory history) {
-        this.inventory = inventory;
-        this.history = history;
-        rollbackStack = new Stack<>();
-    }
-
-    public void cancel(String reservationId) {
-        try {
-            Reservation r = history.findReservation(reservationId);
-
-            if (r == null) {
-                throw new InvalidCancellationException("Reservation not found");
+    public void run() {
+        while (true) {
+            Reservation r;
+            synchronized (queue) {
+                r = queue.getRequest();
             }
 
-            rollbackStack.push(reservationId);
+            if (r == null) break;
 
-            inventory.increaseRoom(r.getRoomType());
-
-            boolean removed = history.removeReservation(reservationId);
-
-            if (!removed) {
-                throw new InvalidCancellationException("Cancellation failed");
+            boolean success;
+            synchronized (inventory) {
+                success = inventory.bookRoom(r.getRoomType());
             }
 
-            System.out.println("Cancelled: " + reservationId);
-
-        } catch (InvalidCancellationException e) {
-            System.out.println("Cancellation Error: " + e.getMessage());
+            if (success) {
+                String id = r.getRoomType().replace(" ", "") + "-" + getNextId();
+                System.out.println(Thread.currentThread().getName() + " booked " + id + " for " + r.getGuestName());
+            } else {
+                System.out.println(Thread.currentThread().getName() + " failed booking for " + r.getGuestName());
+            }
         }
     }
 
-    public void showRollbackStack() {
-        System.out.println("\nRollback Stack:");
-        for (String id : rollbackStack) {
-            System.out.println(id);
-        }
+    private static synchronized int getNextId() {
+        return idCounter++;
     }
 }
 
@@ -167,20 +102,23 @@ public class HotelBookingApp {
         RoomInventory inventory = new RoomInventory();
         inventory.addRoom("Single Room", 2);
 
-        BookingHistory history = new BookingHistory();
+        BookingQueue queue = new BookingQueue();
 
-        BookingService booking = new BookingService(inventory, history);
+        queue.addRequest(new Reservation("Vishanth", "Single Room"));
+        queue.addRequest(new Reservation("Arun", "Single Room"));
+        queue.addRequest(new Reservation("Priya", "Single Room"));
+        queue.addRequest(new Reservation("Kiran", "Single Room"));
 
-        booking.book("Vishanth", "Single Room");
-        booking.book("Arun", "Single Room");
+        BookingProcessor t1 = new BookingProcessor(queue, inventory);
+        BookingProcessor t2 = new BookingProcessor(queue, inventory);
+        BookingProcessor t3 = new BookingProcessor(queue, inventory);
 
-        CancellationService cancelService = new CancellationService(inventory, history);
+        t1.setName("Thread-1");
+        t2.setName("Thread-2");
+        t3.setName("Thread-3");
 
-        cancelService.cancel("SingleRoom-2");
-        cancelService.cancel("Invalid-999");
-
-        cancelService.showRollbackStack();
-
-        System.out.println("\nAvailable Rooms: " + inventory.getAvailability("Single Room"));
+        t1.start();
+        t2.start();
+        t3.start();
     }
 }
