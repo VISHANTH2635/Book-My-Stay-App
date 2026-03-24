@@ -1,4 +1,5 @@
-import java.util.Scanner;
+import java.util.HashMap;
+import java.util.Map;
 
 abstract class Room {
     private String roomType;
@@ -71,48 +72,64 @@ class SuiteRoom extends Room {
     }
 }
 
+class RoomInventory {
+    private HashMap<String, Integer> inventory;
+
+    public RoomInventory() {
+        inventory = new HashMap<>();
+    }
+
+    public void addRoom(String roomType, int count) {
+        inventory.put(roomType, count);
+    }
+
+    public int getAvailability(String roomType) {
+        return inventory.getOrDefault(roomType, 0);
+    }
+
+    public void updateAvailability(String roomType, int newCount) {
+        if (inventory.containsKey(roomType)) {
+            inventory.put(roomType, newCount);
+        }
+    }
+
+    public void displayInventory() {
+        System.out.println("===== ROOM INVENTORY =====");
+        for (Map.Entry<String, Integer> entry : inventory.entrySet()) {
+            System.out.println(entry.getKey() + " Available: " + entry.getValue());
+        }
+    }
+}
+
 public class HotelBookingApp {
     public static void main(String[] args) {
-        Scanner sc = new Scanner(System.in);
 
         Room single = new SingleRoom();
         Room doubleRoom = new DoubleRoom();
         Room suite = new SuiteRoom();
 
-        int singleAvailable = 5;
-        int doubleAvailable = 3;
-        int suiteAvailable = 2;
+        RoomInventory inventory = new RoomInventory();
 
-        System.out.println("===== HOTEL MENU =====");
-        System.out.println("1. Single Room");
-        System.out.println("2. Double Room");
-        System.out.println("3. Suite Room");
-        System.out.print("Enter your choice: ");
+        inventory.addRoom(single.getRoomType(), 5);
+        inventory.addRoom(doubleRoom.getRoomType(), 3);
+        inventory.addRoom(suite.getRoomType(), 2);
 
-        int choice = sc.nextInt();
+        System.out.println("===== ROOM DETAILS =====\n");
 
-        System.out.println();
+        single.displayRoomDetails();
+        System.out.println("Available: " + inventory.getAvailability(single.getRoomType()) + "\n");
 
-        switch (choice) {
-            case 1:
-                single.displayRoomDetails();
-                System.out.println("Available: " + singleAvailable);
-                break;
+        doubleRoom.displayRoomDetails();
+        System.out.println("Available: " + inventory.getAvailability(doubleRoom.getRoomType()) + "\n");
 
-            case 2:
-                doubleRoom.displayRoomDetails();
-                System.out.println("Available: " + doubleAvailable);
-                break;
+        suite.displayRoomDetails();
+        System.out.println("Available: " + inventory.getAvailability(suite.getRoomType()) + "\n");
 
-            case 3:
-                suite.displayRoomDetails();
-                System.out.println("Available: " + suiteAvailable);
-                break;
+        inventory.displayInventory();
 
-            default:
-                System.out.println("Invalid choice");
-        }
+        inventory.updateAvailability("Single Room", 4);
 
-        sc.close();
+        System.out.println("\nAfter Update:\n");
+        inventory.displayInventory();
     }
 }
